@@ -1,0 +1,164 @@
+---
+title: "101b_final_proj"
+output: html_document
+---
+
+```{r}
+library(randomForest)
+library(FrF2)
+library(AlgDesign)
+library(corrplot)
+```
+
+```{r}
+# dataset = diabetes
+# x's: tuning parameters of random forest
+# y: cross-validation accuracy
+# max number of runs = 35
+diabetes <- load("diabetes.Rdata")
+source("CrossValidation_RF.R")
+```
+
+# Part 1: Design of the Experiment
+
+## Question 1
+
+```{r}
+# 7 factors
+
+# Fractional Factorial Design
+fr.design.cod <- FrF2(nruns = 32, nfactors = 7, randomize = F)
+fr.design.mat <- desnum(fr.design.cod)
+
+convert_design <- function(coded_design){
+  ntree <- ifelse(coded_design[,1] == 1, 1000, 100)
+  replace <- ifelse(coded_design[,2] == 1, 1, 0)
+  mtry <- ifelse(coded_design[,3] == 1, 6, 2)
+  nodesize <- ifelse(coded_design[,4] == 1, 11, 1)
+  maxnodes <- ifelse(coded_design[,5] == 1, 1000, 10)
+  classwt <- ifelse(coded_design[,6] == 1, 0.9, 0.5)
+  cutoff <- ifelse(coded_design[,7] == 1, 0.8, 0.2)
+  design <- data.frame(ntree, replace, mtry, nodesize, maxnodes, classwt, cutoff)
+  design
+}
+fr.design <- convert_design(fr.design.mat)
+cv.fr.design <- cv.rf(fr.design, y, X) # diabetes dataset used in cv function
+cv.fr.design
+```
+```{r}
+# D-Optimal Design
+candidate.set <- gen.factorial(levels = 2, nVars = 7, varNames = c("A", "B", "C", "D", "E", "F", "G"))
+alt.design <- optFederov(~(A + B + C + D + E + F + G)^2, candidate.set, nTrials = 35, nRepeats = 100) # includes all linear terms and two-factor interactions
+d.optimal.design <- alt.design$design
+d.design <- convert_design(d.optimal.design)
+cv.d.design <- cv.rf(d.design, y, X)
+cv.d.design
+```
+
+We propose a fractional factorial design with 7 factors and 32 runs (resolution 4, 7-2), and a d-optimal design with 35 runs.
+
+## Question 2
+
+
+```{r}
+# VIF and multicollinearity plots
+
+# Model matrix for fractional design
+X <- model.matrix(~(A + B + C + D + E + F + G)^2-1, data.frame(fr.design.mat))
+
+# Create color map on pairwise correlations.
+contrast.vectors.correlations.two <- cor(X)
+corrplot(contrast.vectors.correlations.two, type = "full", 
+         tl.col = "black", tl.srt = 90, method = "color",
+         addgrid.col = "gray", title = "Hi")
+```
+```{r}
+X_new <- X[,-c(9, 12, 21)]
+var.eff.one <- diag(solve(t(X_new)%*%X_new))
+vif <- nrow(X)*var.eff.one
+vif
+```
+
+
+```{r}
+# Model matrix for d-optimal design
+X.alt <- model.matrix(~(A + B + C + D + E + F + G)^2-1, data.frame(d.optimal.design))
+
+# Create color map on pairwise correlations for d-optimal design
+contrast.vectors.correlations.alt <- cor(X.alt)
+corrplot(contrast.vectors.correlations.alt, type = "full", addgrid.col = "gray",
+         tl.col = "black", tl.srt = 90, method = "color", tl.cex=0.8)
+```
+
+```{r}
+var.eff.one <- diag(solve(t(X.alt)%*%X.alt))
+vif <- nrow(X.alt)*var.eff.one
+vif
+```
+
+## Question 3
+
+## Question 4
+
+```{r}
+prof.design <- data.frame("Run" = 1:22, "ntree" = c(100, 550, 1000, 1000, 1000, 100, 1000, 100, 100, 100, 100, 1000, 100, 550, 100, 1000, 1000, 1000, 100, 1000, 550, 550), "replace" = c(1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1), "mtry" = c(2, 2, 4, 6, 6, 2, 2, 2, 6, 6, 4, 2, 6, 4, 6, 6, 2, 6, 2, 2, 4, 6), "nodesize" = c(11, 1, 1, 1, 1, 1, 6, 11, 1, 1, 11, 11, 6, 6, 11, 11, 11, 11, 1, 1, 6, 11), "maxnodes" = c(10, 10, 10, 1000, 1000, 1000, 10, 10, 10, 10, 1000, 1000, 1000, 505, 505, 10, 1000, 10, 1000, 505, 505, 1000), "classwt" = c(0.5, 0.5, 0.5, 0.5, 0.9, 0.5, 0.9, 0.9, 0.7, 0.9, 0.9, 0.5, 0.5, 0.7, 0.5, 0.5, 0.7, 0.9, 0.9, 0.9, 0.7, 0.9), "cutoff" = c(0.8, 0.2, 0.2, 0.8, 0.2, 0.8, 0.8, 0.2, 0.8, 0.5, 0.8, 0.5, 0.2, 0.5, 0.2, 0.8, 0.2, 0.2, 0.2, 0.8, 0.5, 0.8))
+
+# Model matrix for d-optimal design
+X.prof <- model.matrix(~(ntree + replace + mtry + nodesize + maxnodes + classwt + cutoff)^2-1, data.frame(prof.design))
+
+# Create color map on pairwise correlations for d-optimal design
+contrast.vectors.correlations.alt <- cor(X.prof)
+corrplot(contrast.vectors.correlations.alt, type = "full", addgrid.col = "gray",
+         tl.col = "black", tl.srt = 90, method = "color", tl.cex=0.8)
+
+```
+
+# Part 2
+
+
+## Question 5
+
+```{r}
+print.data.frame(cv.fr.design)
+```
+
+## Question 6
+
+```{r}
+# A = ntree, B = replace, C = mtry, D = nodesize, E = maxnodes, F = classwt, G = cutoff
+# model with all factors
+f.model <- lm(CV ~ (ntree + replace + mtry + nodesize + maxnodes + classwt + cutoff + ntree:replace + ntree:nodesize + ntree:maxnodes + ntree:cutoff + replace:mtry + replace:nodesize + replace:maxnodes + replace:classwt + replace:cutoff + mtry:nodesize + mtry:maxnodes + mtry:cutoff + nodesize:maxnodes + nodesize:classwt + nodesize:cutoff + maxnodes:classwt + maxnodes:cutoff + classwt:cutoff), data = cv.fr.design)
+DanielPlot(f.model)
+```
+```{r}
+# significant factors
+rev.cv.fr.design <- cv.fr.design[-c(26, 27),]
+revised.1.f.model <- lm(CV ~ nodesize + classwt + cutoff + maxnodes + maxnodes:cutoff + classwt:cutoff + maxnodes:classwt, data = cv.fr.design)
+# high leverage = 2*7/32 = 0.4375 therefore no high leverage
+par(mfrow = c(2, 2))
+plot(revised.1.f.model) 
+#summary(revised.1.f.model)
+# independence? plot(cv.fr.design$replace, revised.1.f.model$residuals)
+```
+
+```{r}
+re.revised.1.f.model <- lm(CV ~ nodesize + classwt + cutoff + maxnodes + maxnodes:cutoff + classwt:cutoff + maxnodes:classwt, data = rev.cv.fr.design)
+# high leverage = 2*7/32 = 0.4375 therefore no high leverage
+plot(re.revised.1.f.model)
+```
+
+```{r}
+# "confirmation experiment"
+abs(re.revised.1.f.model$fitted.values - rev.cv.fr.design$CV)
+```
+
+```{r}
+summary(re.revised.1.f.model)
+```
+
+
+```{r}
+rstandard(revised.1.f.model)
+```
+
+
